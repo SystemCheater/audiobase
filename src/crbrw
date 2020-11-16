@@ -1,0 +1,8 @@
+
+
+gcc -c mod_browser.c
+gcc *.o -o ABase
+killall ABase
+mv ABase.log ABase.lastlog
+./ABase -v -v -v -v -v
+

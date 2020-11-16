@@ -1,0 +1,12 @@
+echo Start seeking 1
+mpc seek +1
+echo Start seeking 2
+mpc seek +1
+echo Start seeking 3
+mpc seek +1
+echo Start seeking 4
+
+mpc seek +1
+echo Start seeking 5
+mpc seek +1
+echo seeking 5x finished.

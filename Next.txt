@@ -1,0 +1,429 @@
+---------------------------------------------------------------------------------
+- filename:		Next.txt														-
+- project:		AudioBase 3, Jukebox based on mpd (musicpd.org)					-
+- created:		20.02.2005; 19:01 Uhr											-
+- by:			Sebastian Bauer													-
+- function:		next steps, ideas, protocoll									-
+---------------------------------------------------------------------------------
+
+
+02.02.2005, 19:02 Uhr
+----------------------
+- ABase probehalber compiled, geht schon mal
+- bis jetzt vorhandene (eingebundene) Module:
+	o mod_browser
+	o mod_debug
+	o mod_idle
+	o mod_lcdproc
+	o mod_lirc
+	o mod_mpd
+	o mod_player
+	o mod_playlist
+- Festlegen der Aufgaben:
+    MOD_BROWSER:
+		o Browsen von Verzeichnissen, dateibasiert
+			evtl. zusätzlich basierend auf MPD-Datenbank 
+			(sortiert nach Artist, Album, Genre, year -> mini-iPod)
+	MOD_IDLE:
+		o evtl. Screensaver oÄ anzeigen
+	MOD_LCDPROC
+		o nach Mglk. frei konfigurierbare Anzeige auf dem LCD
+		o Verwendung von mehreren Screens (z. B. Player, additional info, system info,...)
+		o fettes Menü
+	MOD_LIRC
+		o empfangen von Tastendrücken
+		o Verarbeiten der Eingaben
+	MOD_PLAYER
+		o weitersenden der Nachrichten an MPD (play,stop,pause,seek,volume,track+-
+	MOD_PLAYLIST
+		o verwalten der MPD-Playlist: move, add, delete, save,...
+	MOD_MPD
+		o kommuniziert mit MPD, sendet/empfängt Befehle nach/von MPD
+
+
+
+23.02.2005, 07:25 Uhr
+-----------------------
+- mod_mpd braucht auch eine Nachrichtenbehandlung, denn dieser mod muss die Nachrichten, die ihm über
+  Messages geschickt werden an MPD weiterleiten. Hierzu wäre es praktisch einige Funktionen auf höherem
+  Level zu basteln (->mpc). mod_mpd übernimmt also die Rolle von mod_player!
+
+
+23.02.2005, 23:08 Uhr
+-----------------------
+- immerhin funktioniert schon mal die Funktion mod_mpd_update_state(). Sie aktualisiert die im Modul 
+  enthaltenen Informationen über den mpd-Status (mod_mpd_status).
+- anscheinend verreckt die bin beim versuch mod_lcdproc zu laden. Nach dem mpd_init() wäre laut modules.inc
+  lcdproc dran initialisiert zu werden!
+
+24.02.2005, 07:33 Uhr
+-----------------------
+- jetzt werden immerhin alle Module geladen, allerdings bricht das Programm nach senden/empfangen von stop
+  ab. 
+- mod_player aus modules.inc entfernt. Aufgabe übernimmt mod_mpd
+
+24.02.2005, 22:28 Uhr
+-----------------------
+- alle Module werden korrekt geladen, ABase läuft.
+- mod_lirc_poll(): hier wäre es schön wenn man selbst den prog_name in der conf-datei eintragen könnte, um
+  alte irmp3-Dateien verwenden zu können. Irgendwie polled mod_lirc nur dann wenn "irmp3" direkt eingetragen
+  wird, nicht wenn sie erst ausgelesen und gespeichert wird!
+  <Fehler behoben: Blödheit --> jetz gehts aber ins Bett!>
+
+01.03.2005 - 22:59 Uhr
+------------------------
+- Bei mod_mpd_update_songinfo() wird meist eine Titelinformation falsch zurückgegeben!
+
+03.03.2005
+------------------------
+immer noch diese Scheißfehler! Tritt nicht immer auf, aber regelmäßig, verdammt! Man sollte mal die charsetconv
+aus mpc probieren. Auch wenns irgendwie keinen Sinn zu ergeben scheint!!
+
+03.03.2005 - 22:36 Uhr
+------------------------
+- Endlich Scheißndreckproblem gelöst durch 1:1-Kopie von mpc-Quellcode. 
+  mod_mpd_update_songinfo() funktioniert jetzt.
+
+09.03.2005 - 22:08 Uhr
+------------------------
+- Irgendiwe funktioniert das Kopieren der Strings nicht richtig, der kopierte String enthält manchmal Schrott!!
+  Verdammte Scheiße! Deswegen wird die Idee Songinformationen im Modul zu speichern endgültig aufgegeben.
+  mod_mpd vermittelt nur noch die Nachrichten --- empfängt die Songinfos also bei jeder Anfrage neu
+ >>Naja gut: Um den ganzen Freigabe-Krempel zu umgehen ist jetzt mod_mpd_song nicht als Pointer deklariert.
+  Es scheint zu funktionieren. Also doch altes Konzept!
+
+18.03.2005 - 07:57 Uhr
+------------------------
+- ignore_list Funktionen hinzugefügt, um bestimmte Nachrichten ignorieren zu können (seek).
+  Funktionen noch nicht getestet!
+
+
+18.03.2005 - 14:26 Uhr
+------------------------
+- irgendwas fabriziert....
+
+20.03.2005 - 10:25 Uhr
+------------------------
+- Idee für die zur Verfügung-Stellung von allgemeinen Songinfos:
+  Einführen einer neuen Header-Datei, die allgemeine Inforamtionen bereitstellt (globale Variablen),
+  so dass jedes Modul darauf zugreifen kann.
+  Wäre ganz geschickt für Playermodus und Songinfos. So kann jedes Modul, den aktuellen Status sehen
+  (lcdproc kann den Status usw. ohne Nachrichtenanforderung ausgeben, mod_mpd muss dafür sorgen, dass
+  die Infos immer aktuell sind (also jede Sekunde neu schreiben). Da die Module eh alle sequentiell
+  zueinander arbeiten, gibts auch keine Zugriffsprobleme.
+- Anscheinend hab ich immer noch nicht das Problem mit der Speichervergabe verstanden. Daher häßliche
+  Lösung des ganzen: Global definierte Info-struct, die Playerinfos, Songinfos usw. enthält. Diese
+  struct enthält keine Zeiger, so dass die ganze Reservierei entfällt.
+  Testlauf mit globalen artist[512] erfolgreich. Es treten keine fehlerhaften Darstellungen mehr auf.
+- Zu der Frage wie oft die Angaben aktualisiert werden sollen: werden alle Angaben mehrmals pro Sekunde
+  refreshed, werden z. B. bei var. Bitraten die aktuellen Bitraten immer korrekt angezeigt -> supé.
+  Das Dauerupdating führt zu einer Prozessorlast von ABase mit ca. <3%. Das ist OK, wo jetzt sowieso
+  der PII 233MHz verwendet wird.
+========================================================================================================
+========================================================================================================
+========================================================================================================
+========================================================================================================
+========================================================================================================
+
+20.03.2005 - 14:16 Uhr
+-----------------------
+- Projekt nochmal neu augebaut, zu viele kleine Änderungen + Speicherfresser
+- globalDef realisiert. Dabei die Originalstructs vom mpdclient verwendet, nur Text nicht als
+  Zeiger deklariert.
+
+20.03.2005 - 19:10 Uhr
+-----------------------
+- wie mir scheint gibt's jetzt endlich erste Erfolge. Immerhin werden schonmal die Titel auf dem LCD
+  angezeigt, seek klappt gut, auch jump, stop, pause, play.
+- nachdem der Player an sich gut klappt geht es jetzt an die Displaydarstellung und den Browser
+  Dazu sollte man allerdings noch überdenken ob man nicht etwas seltener updaten könnte.
+
+22.03.2005 - 13:05 Uhr
+------------------------
+- in ABased.c wird auf eine Nachricht seiner clients gewartet (auch LCDd!), wenn eine Nachricht ansteht
+  wird gepollt, und so die Nachrichten weiterverarbeitet.
+  LCDd schickt aber nach erfolgreichem Ausführen von widget_* und screen_* usw. eine success-Nachricht,
+  die ABased.c empfängt (s. o.), d. h. lcdproc_poll wird andauernd (sinnloser Weise) ausgeführt.
+  Um dies zu verhindern muss nach jeder widget_*-Nachricht usw. eine Abfrage stattfinden, die das
+  success entgegennimmt.
+- Zur Display-Aktuallisierung:
+  Bei irmp3d wird die Displayaktualisierung mit der time-Nachricht, die der aktuelle Player sendet,
+  vorgenommen. Da MPD keine solche Botschaften schickt, bzw. ein eigenes Intervall verwendet werden soll
+  (damit die aktuellen Bitraten bei Songs mit var. Bitraten richtig aktualisiert werden), muss ich mich
+  wohl selber um die Aktualisierung kümmern. 
+  Wenn das lcdproc-succes-Problem gelöst ist, müsste das mit der select()-Lsg aus loop() [ABased.c]
+  funktionieren, die spätestens alle 500ms die Module updated, sofern nicht vorher schon eine Nachricht
+  empfangen wurde (z. B. durch LIRC).
+  Das Intervall könnte dann auch in der config-Datei angegeben werden.
+
+22.03.2005 - 17:59 Uhr
+------------------------
+- so, jetzt werden schon mal die Zeiten und die kbs auf dem Display angezeigt, das ist schon mal fein.
+  Außerdem ist jetzt die Geschichte mit den success-Nachrichten vom LCDd zumindest entschärft, aktuell
+  bei 210MHz CPU wie jetzt mittels der success-Nachrichten das Display 7x/sec aktualisiert, das ist okay.
+  Die CPU-Auslastung beträgt so nicht mal 1%. Außerdem funktionieren nun auch die Tasten repeat und
+  random.
+- bleibt nochmal zu testen ob jetzt ABase länger stabil läuft, sonst traten nach ca. 30 min Hänger im
+  ganzen Linux auf (???) nicht mal strg+alt+entf ging dann. Außerdem war vor der success-Geschichte die
+  CPU-Auslastung im top auf 90% hochzurasen, verusrsacht durch ABase! Makucke!
+- Damit die Displayausgabe korrekt funktioniert, sollte noch ein Änderungsflag in player_song eingefügt
+  werden, und die Texte nur dann neu gezeichnet werden, wenn sie sich geändert haben (scroller!!)
+- nächste größere Aktion Browser, vorher vielleicht noch clear... müsste flott gehen --- dank MPD.
+
+12.04.2005 - 15:50 Uhr
+------------------------
+- ABase funktioniert mittlerweile sehr stabil, keine Abstürze
+- Seek funktioniert, prev/next track, play, stop, pause, random, repeat, volume
+- jetzt funktioniert auch clear, ist die Playliste allerdings leer bleibt der letzte Eintrag stehen,
+  schöner wäre: "Keine Elemente in Playlist!"
+- Wie soll die Verwaltung mehrerer LCD-Screens erfolgen?
+  -> Problem von LCDd: Es scheint nicht vorgesehen zu sein mehrere Screens auf Abruf darzustellen
+     Man könnte mit LCDd -w <waittime> sehr lange Pausen als Wartezeit einstellen, und dann mit
+     screen_set die Priorität des aktuell anzuzeigenden Screens hoch setzen. Vielleicht kann auch schon
+	 allein dadurch dass einem screeen andauernd ein hohe Priorität gesetzt wird (Bsp 64) im Vordergrund
+	 gehalten werden. Soll der zweite Screen folgen, wird der aktuelle wieder 128 und der neue auf 64
+	 gesetzt... Mhh so könnte das klappen.
+	 Allerdings sind bei <waittime> wohl nicht alle beliebigen Werte zugelassen, was aber wohl nichts mit der
+	 Größe des Werts zu tun hat (6450 geht nicht, 6440 schon, 64466 auch!!!???).
+  -> Welche Screens sollen verwaltet werden (Browser, Status, Status2 ??)? Wie sollen zusätzliche Infos
+     angezeigt werden? Durch einen zeilenbasiserten Std.Screen?? Wie wird die Aktualisierung der Screens
+	 ausgeführt? Wie werden die einzelnen Screens verwaltet (struct screen?)?
+
+
+17.04.2005 - 00:11 Uhr
+------------------------
+- neue MPD-beta installiert V0.12 --> jetzt mit Musepack-Unterstützung!!, leider funktioniert allerdings
+  das seeken nicht, mal im Forum sehen
+- Scroller korrigiert, scrollt jetzt wirklich nur wenn nötig, außerdem jetzt mit Trennzeichen "***"
+- Weitere Fragen zum weiteren Vorgehen:
+  -> Es werden drei Komponenten existieren die I/O-Aufgaben erledigen müssen: playlist, browser, menu
+     Können diese alle zusammen in ein Modul gestopft werden? (Prinzipiell ja)
+
+18.04.2005 - 17:25 Uhr
+------------------------
+- damit das seeken funktioniert muss ALSA benutzt werden statt OSS, leider wird dadurch das seeken langsamer,
+  damit MPD-0.12 sich compilen lässt wird alsa-1.0 benötigt.
+- Plan für browser-Geschichte:
+  -> eine browser-struct legt die aktulle Ebene des Menüs/Browser fest, eine browser-Fkt. errechent aus 
+     den Inputs (up,down,select f. checkboxes..) die Ausgabe für das LCD, und stellt sie dar.
+  -> weiter Eingaben wie into, back,... müssen dagegen von einzelnen Funktionen (wie z. B. eine Playlist-Fkt)
+     behandelt werden, die wiederum das browser struct befüllen und dann darstellen lassen.
+  -> Frage: wie soll das Menü als Datenstruktur aufgebaut werden?
+     Es wäre denkbar das Menü durch eine externe Datei flexibel zu machen --> siehe menu-prototype.men!!!
+- jetzt funktioniert auch wieder djump!
+
+19.04.2005 - 19:55 Uhr
+------------------------
+- heute mit dem Browser angefangen, struct BROWSER_ELEMENT und struct BROWSER_STATUS, weiter verfeinert,
+  mittlerweile werden am Display schon die Menüzeilen, Headline und Cursor angezeigt - net schlecht.
+- Jetzt müssen noch die Benutzereingaben weiter in die Browser-Positionen umgerechnet werden.
+- Für den ganzen Browser werden zuverlässige Angaben über Display-Höhe und Breite vorliegen, damit gibt
+  es allerdings Probleme, da das browser_init, das diese Daten braucht vor der Meldung vom LCDd ausgeführt
+  wird. Vielleicht wäre es einfacher die Daten aus ner conf-file auszulesen, oder die widgets erst zu setzen
+  wenn der Benutzer das erste mal browsen will.
+
+20.04.2005 - 12:54 Uhr
+------------------------
+- jetzt kann im Browser mit dem Cursor hoch und runter gefahren werden, funktioniert super.
+- auch mit FixedHeadline
+
+20.04.2005 - 18:32 Uhr
+------------------------
+- zwischendurch flackert das Display kurz auf, liegt wohl daran dass der lcd-daemon die screens wechseln will?
+  -> das Flackern ist ein durch das häufige refreshen unterbundene scrollen (Zeile war zu lang), behoben.
+- browser_timout auf den neuen browser angewendet
+- bei erneutem drücken der browser activate-Taste wird der Browser wieder ausgeblendet
+- als nächstes sollte wohl das laden von PL und Files bearbeitet werden, dann wäre der player schonmal
+  nutzbar.
+- wie funktioniert das?
+  -> browser_browse_mpd(dir) --> stellt das pElement[] bereit
+     o ruft von mpd alle Dateien im Verzeichnis ab und speichert sie (ähnlich der Vorversion) in einem
+	   normalen Array 
+	   -> geht mit mpd-Befehl lsinfo, es werden auch sämtliche metadaten zurückgegeben sowie
+	      Verzeichnis, nicht rekursiv --> optimal.
+		  So kann man sich die Files auch per Tags aussuchen (statt nach filename)
+		  Format z. B. Janis Joplin - Try [2:23] <<< super!
+	   -> Vielleicht wäre es so auch sinnvoll, ein zweites Alternativarray neben pElements bereit zu halten,
+	      so dass jederzeit kurz ein Blick auf den Datenamen geworfen werden kann????? Mal sehen.
+	 o dieses "normale" Array wird mit der schon bestehenden Funktion sortiert (Verzeichnisse oben, alphabetisch)
+	 o Dateinamen werden in pElements übertragen
+	 o dir wird zwischengespeichert
+  -> browser_show() zeigt jetzt den Inhalt an
+
+21.04.2005 - 22:06 Uhr
+------------------------
+- etwas weiter am Browser gearbeitet
+- die substitute_references_song() funktioniert noch nicht richtig!
+
+08.06.2005 - 18:25 Uhr
+-----------------------
+- so endlich gehts weiter, jetzt ist das ganze Projekt als abase05 im debian. Jetzt kann man endlich
+  vernünftig Programmieren
+  
+09.06.2005 - 20:48 Uhr
+-----------------------
+- substitute_references_song() korrigiert
+- etliche Änderungen an mod_browser_get_mpddir() gemacht. Funktion funktioniert nun ganz gut
+- mod_browser_into() funktioniert auch, allerdings noch nicht ausführlich getestet
+- todo:
+  > durch das dauernde Scrollen der langen Browserzeilen wird alles ziemlich unleserlich. Daher nur aktuell ausgewählte
+    Zeile scrollen, falls die zu lang ist (CONF-FILE!!)
+  > Menüzeiger festhalten, der darf natürlich nicht scrollen!
+  > mod_browser_back() realisieren, geht genauso wie mod_browser_into()
+  ... dann gehts auch schon langsam ans PL und DIRs hinzufügen --> kann bei MPD überhaupt nur ein Verzeichnis hinzugefügt werden???
+  > manchmal siehts außerdem so aus als ob die Interpreten-Zeile nicht oft genug aktualisiert wird, liegt vlt. auch am debuggen??
+  
+09.06.2005 - 00:39 Uhr
+-----------------------
+- naja wieder ein bißchen rumgebastelt, aber eigentlich gehör ich jetzt ins Bettt, irgendwo hört halt das Hirn auf.
+  > alles nochmal durchchecken! Teilweise total krumm gedacht.
+  
+11.06.2005 - 01:04 Uhr
+------------------------
+- mod_browser_into() und mod_browser_back() funktionieren super
+- mod_lcdproc_browser_remove(), mod_lcdproc_refresh_browser() und mod_lcdproc_refresh() korrigiert, funktionieren jetz einwandfrei
+  -> allerdings müssen noch einige Variablen in die conf eingetragen werden!!
+- browser springt nach erneutem Aufrufen wieder zum letzten angewählten Verzeichnis zurück
+- LCD-Darstellung funktioniert jetzt auch ohne "Browser-Relikte"
+- Browser wird nur noch geupdatet wenn Änderungen vorliegen -> d. h. mod_browser_messages() muss selbst entscheiden ob ein update nötig
+  ist --> halt nach jedem Tastendruck. So funktioniert auch das Scrollen einwandfrei.
+NEXT:
+- Hinzufügen von Dateien und Verzeichnissen --> dann ist das ganze schonmal benutzbar
+- evtl. noch in die Headline-Zeile die Anzahl der Einträge im aktuellen Verzeichnis anzeigen (The Beatles [34])
+GUTE ARBEIT, WEITER SO :-)
+
+17.06.2005 - 23:23 Uhr
+----------------------
+- Seltsamerweise sieht man den Cursor grad nicht mehr
+- Der Cursor soll bei browser_back wieder auf der Zeile stehen aus der er grad kommt
+
+19.06.2005 - 14:34 Uhr
+-----------------------
+- Cursorproblem wieder gelöst
+- Cursor springt bei back() wieder auf den Eintrag der vorher angewählt wurde
+
+15.07.2005 - 20:33 Uhr
+-----------------------
+- irgendwie gibts Probleme mit dem Display: Beim Systemboot und anschließendem Start von LCDd ist alles normal.
+  (Bist auf die Tatsache, dass die Herzen so komisch durchscrollen --- hab ich eine neue LCD-Version installiert??)
+  Beim Ausführen von abase werden in der ersten und zweiten Zeile die ersten paar Zeichen unterschlagen, in der letzen
+  Zeile wird die komplette Gesamtzeit unterschlagen. Im curses-Modus von LCDd klappt aber alles prima?? Am Progamm wurde
+  seit letztem Mal nichts verändert... Das Display hab ich mal runtergeworfen, aber daran sollte es doch nicht liegen?
+  Vielleicht doch nochmal eine andere lcdproc-version checken???
+  Bei Beendigung von abase05 erscheinen die Herzsymbole im Sekundentakt verteilt über das ganze Display! ????
+
+16.07.2005 - 22:45 Uhr
+-----------------------
+- ein paar kleine Specials dazu gebastelt: 
+  o filename statt title wenn title==0
+  o Anzeige des Dateityps
+  o keine rausschieben mehr wegen zu langer Bitrate
+- next: 
+  o mit dem mpd_add kann man auch Verzeichnisse hinzufügen, also browser_hinzufügen kein Problem
+  o save_playlist gibts auch schon von mpd
+  o Volumebar ist eigentlich ganz super
+  o seeken ist immer noch unschön v. a. MP3
+  
+  >> wird schon ganz brauchbar
+  
+17.07.2005 - 23:07 Uhr
+-----------------------
+- jetzt kann man immerhin schon Verzeichnisse hinzufügen, Dateien akzeptiert er allerdings noch nicht!
+- wie soll das mit den Playlists gelöst werden? in der mpddb stehen die PL-Verzeichnisse nicht drin (erster Browsereintrag -> PLDir?)
+
+23.07.2005 - 10:08 Uhr
+-----------------------
+- Es sollten noch die Browsereinträge alpahbetisch sortiert werden!
+
+23.07.2005 - 19:11 Uhr
+-----------------------
+- Browsereinträge werden jetzt vorrangig nach führenden Zahlen (z. B. "5. One too many mornings" VOR "10. The Times They Are A'Changing")
+  nicht case-sensitive, alpahbetisch aufsteigend, Verzeichnisse zuerst, sortiert
+  Gag dabei: es werden nicht die BROWSER_ELEMENTe an sich sortiert, sondern die Pointer auf die Elemente werden sortiert
+------
+- Dateien werden jetzt auch akzeptiert 
+
+24.07.2005 - 13:38 Uhr
+-----------------------
+- Wenn kein Song in der PL werden jetzt ein paar Statistiken angezeigt (total songtime, no. of songs, uptime)
+- Bei Stop wird bis jetzt nur "playback stopped" angezeigt -> da sollten eigentlich noch ein paar Informationen über dieser 
+  aktuelle Playlist angezeit werden: Anz. der Einträge, Dateiname bzw. Dateiname bei Speicherung, total songtime
+- Pause bleibt jetzt erhalten wenn geskippt wird (besser!?)
+next:
+- Sonderzeichen (äö..) korrekt darstellen. Die Zeichen kommen schon verhunzt von MPD (mal bei mpc spionieren!). Wahrscheinlich ist es auch
+  auf dem Display nicht ganz ohne die Sonderzeichen korrekt darzustellen?
+- Ausführen von Scripts ermöglichen, dann wäre abase05 eigentlich schon mal einsatzbereit
+- Die Scripts sollen in einem seperaten Untermenü aufgelistet werden (evtl. mit Verzeichnisstruktur)
+- Auswahl von Playlists ermöglichen, der Playlistmechanismus von mpd ist nicht zu gebrauchen da er nur eine Verzeichnisebene erlaubt!
+  -> wahrscheinlich muss ein Link (ln -s) zu der gewünschten Playlist nach außen erstellt werden, und dieser Link dann immer geladen werden.
+
+  
+11.08.2005 - 22:19 Uhr
+-----------------------
+- Bei Neuinstallation von lirc beachten: 
+	chmod 666 /dev/lirc*
+  ausführen, sonst kommt "cannot connect to socket" o. Ä.
+- angefangen mod_browser_intodirscan() zu korrigieren, so dass dann in einem Script-Dir gescannt werden kann, bzw. Scripts
+  ausgeführt werden können.
+  
+  
+23.08.2005 - 13:11 Uhr
+-----------------------
+- Jetzt gehen Skripts samt Rückmeldung
+
+23.08.2005 - 19:11 Uhr
+-----------------------
+- charsetconversion hinzugefügt. Jetzt werden die Umlaute, die von MPD kommen richtig in Umlaute umgewandelt (vorher Sonderzeichen-salat!),
+  Konversion erfolgt mit fromUtf8(). Allerdings müssen auch die Dateinamen, die an MPD gesendet werden wieder rückgewandelt werden.
+- songToFormatedString() vom mpc-Projekt übernommen, allerdings noch einige Variablen hinzugefügt: %shortfile%
+  
+TODO:
+- zu songToFormatedString() noch die %plpos% hinzufügen
+- ähnlich songToFormatedString() eine Funktion die den Status wiedergibt (bitrate, channel, updating,...)
+- noch ein Zusatzsymbol einführen %center%, %left%, %right%, %fill%
+	bei %center% werden links und rechts vom String Zeichen bis zu Displaybreite eingefügt
+	bei %left% werden diese rechts und bei %right% links eingefügt
+	bei %fill% werden direkt bei %fill% entsprechend viele Leerzeichen eingefügt
+- conf-Einträge für alle vier Zeilen des Displays und für den Browser, durch die geniale songToFormatedString() werden auch keinen
+  Abfragen nach dem Vorhandensein der Tags zu kümmern, das muss jetzt der User in der .conf bewerkstelligen.
+- evtl. noch Zusatzfunktion: DisplaySwap (auch im Browser!)
+- evtl. Crossfading aktivieren/deaktivieren können (ist etwas nervig manchmal)
+
+...
+- etwas weiter gebastelt. Allerdings scheint die songToFormatedString() nicht so genial zu sein. Klammerungen funktionieren nicht
+  einwandfrei, unbekanntes in [] wird gelöscht, ebenso wie führende Zeichen!
+  
+24.08.2005 - 16:41 Uhr
+-----------------------
+- ein bißchen an dem songToFormatedString()-Problem gearbeitet. Allerdings ist es zu zeitraubend nochmal eine komplett neue
+  FUnktion selbst zu schreiben... 
+  DAHER: ich gebe mich mit der Fkt. von mpc zufrieden, führe aber in der conf ein paar Variablen ein, die die Darstellung von
+  %repeat%,... bei ON und OFF beschreiben. Da wird dann schon viel an Komplexität genommen. Den Rest müsste dann die Fkt von mpc
+  erledigen können.
+- IDEE zu delete und crop. Aktuell laufende Lieder können gemarkert werden. Ein anschließender delete oder crop-Befehl bewirkt
+  dann eine kurze Nachfrage die bestätigt werden muss und alle markierten Songs werden gelöscht, bzw. gecropt.
+
+
+  
+---------------------------------------------
+TODO:
+- Connect MPD mit Passwort erlauben (siehe auch mpc!)
+- Header der Quelldateien berichtigen
+- seekcounter-Rückstellwert in conf-Datei zugänglich machen (mod_mpd_message())
+- mod_lcdproc_bitrate_counter Rückstellwert über conf-Datei einstellbar machen
+- alle ///TODOs checken -> hier gibts was zu tun
+- alte Funktionen/Variablen, die noch vom irmp3 sind rauswerfen
+- Befehl hinzufügen, so dass alle Dateien im aktuellen Verzeichnis (nicht rekursiv) in die Playlist kommen
+- Eingaben von lcdproc ermöglichen: siehe dazu altes AudioBase03-Projekt -> mod_lcdproc.c, die keys müssen erst von lcdproc weitergegeben werden, dies geschieht indem man client_key_add (oä) sendet. Auslesen der erwünschten Keys aus abase.conf
+
+---------------------------------------------
+evtl. TODO:
+- Liedauswahlbefehl nach < und > erst nach einem timeout an den player schicken -> schnelleres durchzappen
+- refresh besser steuern, bis jetzt wird bei jeder success-Nachricht (von LCDd) alles refresh (-> 8x pro Sek.)
+  besser wäre ein einstellbares Intervall (timer)
+- Trennzeichen über conf konfigurierbar machen
+- Skript bauen, so dass mit Hilfe von FAM (File blabal Monitor) Änderungen im MP3-Verzeichnis erkannt werden und die database geupdatet wird
+
+---------------------------------------------
+ALLGEMEINE ANFORDERUNG:
+- Speichern von mehreren Balanceeinstellungen (Profile?)

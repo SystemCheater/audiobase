@@ -1,0 +1,41 @@
+menu
+1Playlist	ID_PLAYLIST
+	new	playlist new
+	open	playlist open
+	show	ID_PLAYLIST_SHOW
+		sorted
+		as is
+		by date
+		by name
+		by length
+	crop	playlist crop
+	delete	playlist clear
+	Playback mode
+Volume	ID_VOLUME
+	Volume	[0-100]%
+Playback mode	PLAYBACK_MODE
+	repeat	[bool]
+	random
+	repeat-1
+
+
+# sind Kommentare
+# die Anzahl der Tabs vor dem anzuzeigenden Text bezeichnet die aktuelle Verschachtelungstiefe
+# nach dem Text folgen durch Kommas getrennt die auszuführenden Befehle
+# werden keine Befehle, sondern stattdessen Ganzzahleingaben gewünscht wird dies durch [von-bis]blabla angegeben
+# wird statt der Befehle [bool-radio] angegeben kann dieses Element "an/aus gehakt" werden, allerdings pro submenu 
+#   nur eines der Elemente die mit [bool-radio] gekennzeichnet sind (Radiobutton)
+# wird statt der Befehle [bool-check] angegeben kann dieses Element "an/aus gehakt" werden, pro submenu beliebig viele
+
+
+Playlist	submenu, stop
+	new	playlist new
+	open	playlist open
+	shop	submenu
+		sorted		playlist show_sorted
+		by date		playlist show_by_date
+		<<Zurück	menu back
+	count	[0-100]%
+	bool	[bool-radio]
+	bool2	[bool-check]
+		

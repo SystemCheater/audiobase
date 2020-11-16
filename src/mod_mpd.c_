@@ -1,0 +1,470 @@
+/*************************************************************************
+ * 
+ * ABase - Multimedia Audio Jukebox for Linux
+ * http://ABase.sourceforge.net
+ *
+ *
+ * this file was originally mod_mpg123.c, changed it for mpd-support
+ * by Sebastian Bauer 07.10.2004
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
+
+
+#include "../common/config.h"
+#include "../common/ABaseconfig.h"
+#include "../common/ABaselog.h"
+#include "ABasemod.h"
+#include "mod_mpd.h"
+#include "string.h"
+#include "globalDef.h"
+#include "../common/libmpdclient.h"
+
+/*************************************************************************
+ * GLOBALS
+ */
+mpd_Connection *conn;
+//mpd_Status player_status;
+//mpd_Song player_song;
+
+
+fd_set mod_mpd_fdset;
+
+static int seekcounter=0;
+static int lastsecpos = -1;
+static int lastsecremain = -1;
+
+/*************************************************************************
+ * MODULE INFO
+ */
+mod_t mod_mpd = {
+	"mod_mpd",
+	mod_mpd_deinit,	// deinit
+	NULL,	// reload
+	&mod_mpd_fdset,	// watch_fdset
+	mod_mpd_poll,		// poll
+	NULL,			// update
+	mod_mpd_message,	// message
+	NULL,			// SIGCHLD handler
+	NULL,			// avoid warning
+};
+
+
+
+////////////////////////////////////////////////////////
+// Writes error to logfile if there's any
+////////////////////////////////////////////////////////
+void mod_mpd_print_error()
+{
+	if (conn->error)
+	{
+		char c[]="BUFFER OVERRUN";
+		switch (conn->error)
+		{
+		case 0:
+			sprintf(c,"NOERROR");
+			break;
+		case MPD_ERROR_TIMEOUT:
+			sprintf(c,"TIMEOUT");
+			break;
+		case MPD_ERROR_SYSTEM:
+			sprintf(c,"SYSTEM");
+			break;
+		case MPD_ERROR_UNKHOST:
+			sprintf(c,"UNKHOST");
+			break;
+		case MPD_ERROR_CONNPORT:
+			sprintf(c,"CONNPORT");
+			break;
+		case MPD_ERROR_NOTMPD:
+			sprintf(c,"NOTMPD");
+			break;
+		case MPD_ERROR_NORESPONSE:
+			sprintf(c,"NORESPONSE");
+			break;
+		case MPD_ERROR_SENDING:
+			sprintf(c,"SENDING");
+			break;
+		case MPD_ERROR_CONNCLOSED:
+			sprintf(c,"CONNCLOSED");
+			break;
+		case MPD_ERROR_ACK:
+			sprintf(c,"ACK");
+			break;
+		case MPD_ERROR_BUFFEROVERRUN:
+			sprintf(c,"BUFFEROVERRUN");
+			break;
+		default:
+			sprintf(c,"UNKNOWN: %i",conn->error);
+			break;
+		}
+		log_printf(LOG_DEBUG,"  MPD-error (%s) reported: %s\n",c,conn->errorStr);
+	}
+}
+
+
+void mod_mpd_update_status()
+{
+//	mpd_InfoEntity * entity=NULL;
+
+//	if (player_status)
+//		mpd_freeStatus(player_status);
+	log_printf(LOG_DEBUG,"jetzt wirds kritsich");
+	mpd_Status *status;
+	mpd_finishCommand(conn);
+	mpd_sendStatusCommand(conn);
+	status = mpd_getStatus(conn);
+	
+
+
+
+	if (conn->error)
+	{
+		mod_mpd_print_error();
+		log_printf(LOG_DEBUG,"mod_mpd_update_status: status command failed! MPD: %s\n",conn->error);
+		return;
+	}
+
+	log_printf(LOG_DEBUG,"jetzt wirds kritsich");
+
+	//log_printf(LOG_DEBUG,"mod_mpd_update_status: mpd_getStatus done.\n");
+
+	if (conn->error||status==NULL)
+	{
+		mod_mpd_print_error();
+		log_printf(LOG_DEBUG,"mod_mpd_update_status: getting status failed! MPD: %s\n",conn->error);
+		return;
+	}
+
+	log_printf(LOG_DEBUG,"jetzt wirds kritsich");
+
+	char c[]="UNKNOWN";
+
+
+	player_status.bitRate=status->bitRate;
+	player_status.bits=status->bits;
+	player_status.channels=status->channels;
+	player_status.crossfade=status->crossfade;
+	player_status.elapsedTime=status->elapsedTime;
+	strcpy(player_status.error,status->error);
+	player_status.playlist=status->playlist;
+	player_status.playlistLength=status->playlistLength;
+	player_status.random=status->random;
+	player_status.repeat=status->repeat;
+	player_status.sampleRate=status->sampleRate;
+	player_status.song=status->song;
+	player_status.songid=status->songid;
+	player_status.state=status->state;
+	player_status.totalTime=status->totalTime;
+	player_status.updatingDb=status->updatingDb;
+	player_status.volume=status->volume;
+
+
+	if (player_status.state==MPD_STATUS_STATE_STOP)
+		strcpy(c,"STOP");
+	else if (player_status.state==MPD_STATUS_STATE_PLAY)
+		strcpy(c,"PLAYING");
+	else if (player_status.state==MPD_STATUS_STATE_PAUSE)
+		strcpy(c,"PAUSED");
+
+	log_printf(LOG_DEBUG,"mod_mpd_update_status: Got status: %s, %s random: %s, repeat: %s, crossfade: %s\n",c,player_status.updatingDb?"UPDATING DB":"NO UPDATING",player_status.random?"YES":"NO",player_status.repeat?"YES":"NO",player_status.crossfade?"YES":"NO");
+	log_printf(LOG_DEBUG,"				songtime: %i, totaltime: %i, bitrate: %ikbs; channels: %i; bits: %ibit; samplerate: %iHz\n",player_status.elapsedTime,player_status.totalTime,player_status.bitRate,player_status.channels,player_status.bits,player_status.sampleRate);
+	mpd_freeStatus(status);
+}
+
+void mod_mpd_update_songinfo()
+{
+	mpd_Status * status;
+	mpd_InfoEntity * entity;
+	mpd_Song * song;
+
+	mpd_sendCommandListOkBegin(conn);
+	mpd_sendStatusCommand(conn);
+	mpd_sendCurrentSongCommand(conn);
+	mpd_sendCommandListEnd(conn);
+	
+	status = mpd_getStatus(conn);
+
+	if(status->state == MPD_STATUS_STATE_PLAY || 
+		status->state == MPD_STATUS_STATE_PAUSE) 
+	{
+		mpd_nextListOkCommand(conn);
+		
+		while((entity = mpd_getNextInfoEntity(conn))) {
+			song = entity->info.song;
+			
+			if(entity->type!=MPD_INFO_ENTITY_TYPE_SONG) {
+				mpd_freeInfoEntity(entity);
+				continue;
+			}
+
+			//Save information to player_song
+			if (song==NULL)
+			{
+				log_printf(LOG_DEBUG,"mod_mpd_update_songinfo: no songinfo available.\n");
+				return;
+			}
+			log_printf(LOG_DEBUG,"mod_mpd_update_songinfo: songinfo available.\n");
+
+			////// copy data to player_song
+			strcpy(player_song.file, song->file);
+			strcpy(player_song.album, song->album);
+			strcpy(player_song.artist, song->artist);
+			strcpy(player_song.name, song->name);
+			strcpy(player_song.title, song->title);
+			strcpy(player_song.track, song->track);
+			player_song.time = song->time;
+			player_song.pos = song->pos;
+			player_song.id = song->id;
+
+ 
+			mpd_freeInfoEntity(entity);
+			
+			break;
+		}
+		
+		
+		mpd_finishCommand(conn);
+		mpd_freeStatus(status);
+	}
+	log_printf(LOG_DEBUG,"mod_mpd_update_songinfo: got song information from file: %s\n",player_song.file);
+	log_printf(LOG_DEBUG,"                             Artist: %s, Title: %s, Name: %s\n",player_song.artist,player_song.title,player_song.name);
+	log_printf(LOG_DEBUG,"                             Album: %s, Track: %s, time: %i, pos: %i, id: %i\n",player_song.album,player_song.track,player_song.time,player_song.pos,player_song.id);
+		
+
+}
+
+
+
+/*************************************************************************
+* RECEIVE MESSAGE
+*/
+void mod_mpd_message (int msgtype, char *rawmsg)
+{
+	char *c1, *c2, *c3, msg[512];
+	log_printf(LOG_DEBUG,"mod_mpd_message: entered.\n");
+
+	strncpy(msg,rawmsg,sizeof(msg));	// pad msg with nulls
+	//return;
+	// handle input messages
+	if (msgtype == MSGTYPE_INPUT) {
+		c1 = strtok(msg, " \t");
+		if(!c1) return;
+		if (!strcasecmp(c1, "play"))
+		{
+			log_printf(LOG_DEBUG,"mod_mpd_message: entered play-section!\n");
+			mod_mpd_update_status();
+			if (player_status.state==MPD_STATUS_STATE_PAUSE)
+				mpd_sendPlayCommand(conn,player_status.song);
+			else
+				mpd_sendPlayCommand(conn,0);
+			mod_mpd_print_error();
+			mpd_finishCommand(conn);
+			mod_mpd_print_error();
+			//mod_mpd_update_status();
+			log_printf(LOG_DEBUG,"mod_mpd_message: play-section end.\n");
+			
+		} else if (!strcasecmp(c1, "stop"))
+		{
+			mod_sendmsgf(MSGTYPE_PLAYER,rawmsg);
+			mod_sendmsgf(MSGTYPE_EVENT,rawmsg);
+			//	mod_player_status = PLAYER_STATUS_STOP;
+			log_printf(LOG_DEBUG,"mod_mpd_message: now stop mpd.\n");
+			mpd_sendStopCommand(conn);
+			mpd_finishCommand(conn);
+			log_printf(LOG_DEBUG,"mod_mpd_message: ...successfull.\n");
+			mod_mpd_update_status();
+			//mod_mpd_update_status() ???
+		}
+		else if ( !strcasecmp(c1, "stopall"))
+		{
+			///mod_sendmsgf(MSGTYPE_PLAYER,"play none");
+			//	mod_player_status = PLAYER_STATUS_HALT;
+			//mod_sendmsgf(MSGTYPE_EVENT,"halt");
+		} 
+		else if (!strcasecmp(c1, "pause")) 
+		{
+			mod_sendmsgf(MSGTYPE_PLAYER,rawmsg);
+			if (player_status.state==MPD_STATUS_STATE_PAUSE)
+			{
+				log_printf(LOG_DEBUG,"mod_mpd_message: player paused.\n");
+				mpd_sendPauseCommand(conn,0);
+			}
+			else if (player_status.state==MPD_STATUS_STATE_PLAY)
+				mpd_sendPauseCommand(conn,1);
+			mod_mpd_print_error();
+			mpd_finishCommand(conn);
+			mod_mpd_print_error();
+			mod_mpd_update_status();
+		}
+		else if ( !strcasecmp(c1, "seek")) 
+		{
+			mod_sendmsgf(MSGTYPE_PLAYER,rawmsg);
+			log_printf(LOG_DEBUG,"seekcounter=%i",seekcounter);
+			if (seekcounter>0)
+				seekcounter--;
+			else
+			{
+				seekcounter=1;
+
+			c2 =  strtok(NULL, " \t") ;
+			if(!c2) return;
+			log_printf(LOG_DEBUG,"mod_mpd_message: seeking %s=%i",c2,atoi(c2));
+			mod_mpd_update_status();
+
+			mpd_sendSeekCommand(conn, player_status.song,player_status.elapsedTime+2);
+			
+			mod_mpd_print_error();
+			mpd_finishCommand(conn);
+			mod_mpd_print_error();
+			}
+		}
+	} 
+
+	
+	// handle player messages
+	else if (msgtype == MSGTYPE_PLAYER) {
+		c1 =  strtok(msg, " \t") ;
+		if(!c1) return;
+		if ( !strcasecmp(c1, "endofsong")) {
+			mod_sendmsgf(MSGTYPE_EVENT,"endofsong");
+			//	mod_player_status = PLAYER_STATUS_STOP;
+		} else if (!strcasecmp(c1, "error")) {
+			;
+		} else if(!strcasecmp(c1, "playing")) {
+		/*		mod_sendmsgf(MSGTYPE_EVENT,"play %s %s",mod_player_player->msg, mod_player_song);
+		//	mod_player_status = PLAYER_STATUS_PLAY;
+		// we've start playing, don't start the next one even in case of error
+		// this is not NULL, or the message wouldn't be generated
+		free_message(mod_player_player->next);
+		mod_player_player->next = NULL;
+		free_message(mod_player_player_extra);
+		mod_player_player_extra = NULL;
+		if(mod_player_type) {
+		free_message(mod_player_type->next);
+			mod_player_type->next = NULL;*/
+		}
+		
+	} else if (msgtype == MSGTYPE_QUERY) 
+	{
+		c1 =  strtok(msg, " \t") ;
+		if(!c1) return;
+		if ( !strcasecmp(c1, "status"))
+		{
+			switch (player_status.state) {
+			case MPD_STATUS_STATE_STOP:
+				mod_sendmsgf(MSGTYPE_INFO,"stop");
+				break;
+			case MPD_STATUS_STATE_PLAY:
+				//Käse:
+				mod_sendmsgf(MSGTYPE_INFO,"play %s %i", "mpc",player_status.song);
+				break;
+			case MPD_STATUS_STATE_PAUSE:
+				mod_sendmsgf(MSGTYPE_INFO,"pause");
+				break;
+			}
+			
+		}
+	}
+}
+
+
+
+/*************************************************************************
+ * MODULE INIT FUNCTION
+ */
+char *mod_mpd_init (void)
+{
+	log_printf(LOG_DEBUG, "mod_mpd_init(): initializing\n");
+
+	int	mod_mpd_fd=0;
+	FD_ZERO(&mod_mpd_fdset);
+
+	char mpd_host[100];
+	strcpy(mpd_host,config_getstr("mpd_host","localhost"));
+	int mpd_port=config_getnum("mpd_port", 6600);
+
+	conn = mpd_newConnection(mpd_host,mpd_port,10);
+	if(conn->error) {
+		log_printf(LOG_ERROR, "mod_mpd_init(): MPD connection failed on host %s port %i!\n", mpd_host,mpd_port);
+		log_printf(LOG_ERROR, "\tMPD client error message: %s\n",conn->errorStr);
+		mpd_closeConnection(conn);
+		return conn->errorStr;
+	}
+
+	//yeah now we're connected
+	mod_mpd_fd=conn->sock;
+	log_printf(LOG_DEBUG, "mod_mpd_init(): connected to MPD: host %s port %i; socket %i!\n",mpd_host,mpd_port,mod_mpd_fd);
+	log_printf(LOG_DEBUG, "	MPD Version %i.%i.%i\n",conn->version[0],conn->version[1],conn->version[2]);
+
+	// register our module
+	FD_SET(mod_mpd_fd,&mod_mpd_fdset);
+	mod_register(&mod_mpd);
+
+	mod_mpd_update_status();
+	mod_mpd_update_songinfo();
+	return NULL;
+}
+
+
+/*************************************************************************
+ * MODULE DEINIT FUNCTION
+ */
+void mod_mpd_deinit (void)
+{
+	// free mpd config
+//	mpd_freeconfig(mod_mpd_config);
+
+	// disconnect from mpd
+	mpd_closeConnection(conn);
+
+//	mpd_freeSong(player_song);
+	log_printf(LOG_DEBUG, "mod_mpd_deinit(): closed MPD connection\n");
+	FD_ZERO(&mod_mpd_fdset);
+}
+
+
+/*************************************************************************
+ * POLL INPUT DATA
+ */
+void mod_mpd_poll (int __attribute__((unused)) fd)
+{
+	char *code, *command;
+	int rc;
+
+/*	if (!lirc_nextcode(&code)) {
+		while ((rc = lirc_code2char(mod_lirc_irconfig, code, &command)) == 0 && command) {
+			log_printf(LOG_NOISYDEBUG, "mod_lirc_poll(): got command '%s'\n", command);
+			mod_sendmsg(MSGTYPE_INPUT, command);
+		}
+		free(code);*/
+/*
+	char *ir, *command;
+
+	if ((ir = lirc_nextir()) != NULL) {
+		while ((command = lirc_ir2char(mod_lirc_irconfig, ir)) != NULL) {
+			log_printf(LOG_NOISYDEBUG, "mod_lirc_poll(): got command '%s'\n", command);
+			mod_sendmsg(MSGTYPE_INPUT, command);
+		}
+		free(ir);
+		
+#endif	} else {	// lirc has died
+			log_printf(LOG_NORMAL, "mod_mpd_poll(): MPD read returned error .\n");
+			FD_ZERO(&mod_mpd_fdset);
+	}*/
+}
+
+
+/*************************************************************************
+ * EOF
+ */

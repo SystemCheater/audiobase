@@ -1,0 +1,68 @@
+MANUAL zu AudioBase 0.4
+----------------------------
+
+1.  lircABase.conf
+1.2 Befehle
+	djump x:
+	- djump ist für die Direkteingabe von Titelnummern gedacht.
+	- x ist dabei ein Parameter bestehend aus einem Zeichen, längere Parameter werden abgeschnitten.
+	- ist x eine Ziffer wird direkt das x-te Lied gespielt
+	- ist x '>' wird der Eingabecursor um eine Stelle erweitert bzw. aktiviert
+	- ist x '+' wird die Lieddirekteingabe um 10 erhöht bzw. aktiviert
+	- wird eine Zahlenkombination eingegeben die aufgrund der Playlist-Länge nicht sinnvoll ist wird er
+	  Lieddirekteingabemodus verlassen
+
+############ veraltet!
+#	Variation: browser djump x
+#	erlaubt es die Direkteingabe nur dann zu ermöglichen wenn der Browser nicht aktiv ist
+#	(bei Doppeltbelegung mit browser up, down, into, back)
+############	
+	browser activate
+	- aktiviert und öffnet den browser
+	- für den Fall dass er bereits offen ist wird er geschlossen (toggle)
+
+	browser deactivate
+	- schließt den browser
+	
+	browser up
+	- Cursor - sofern browser aktiv - nach oben
+	
+	browser down
+	- Cursor - sofern browser aktiv - nach unten
+	
+	browser into
+	- sofern möglich/browser aktiv:  Unterverzeichnis/Eintrag öffnen
+	
+	browser back
+	- sofern mgl./browser aktiv: in das nächsttiefer Unterverzeichnis wechseln
+	
+	pl_clear
+	- löscht den Inhalt der aktuellen Playlist (löscht sie nicht physikalisch)
+	
+	delcurrsong
+	- löscht den gerade aktiven Song aus der Playlist
+	
+	BEDINGUNGEN BEI BEFEHLEN
+	sollen Befehle nur unter bestimmten Bedingungen ausgeführt werden, werden dem eigentlichen Befehl
+	die Bedingunscodes c_* vorangestellt.
+	Bedingunscodes:
+	- c_nbrowser: Befehl wird ausgeführt wenn browser NICHT aktiv
+	- c_browser: Befehl wird ausgeführt wenn browser aktiv
+	Beispiel: c_nbrowser play  -->  das aktuelle Lied wird nur gespielt wenn der Browser nicht aktiv ist
+	
+
+
+Substitutions:
+folgende Werte können durch playereigene Werte ersetzt werden:
+%track%
+%title%
+%artist%
+%album%
+%plpos%
+%time%	format [hh:]mm:ss
+%file%
+%shortfile%
+
+Anmerkung: Die Schreibweise erfolt mit case-sensitivity!!
+	
+	

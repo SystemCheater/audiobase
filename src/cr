@@ -1,0 +1,7 @@
+
+killall ABase
+mv ABase.log ABase.lastlog
+
+gcc *.o -o ABase
+./ABase -v -v -v -v -v
+
